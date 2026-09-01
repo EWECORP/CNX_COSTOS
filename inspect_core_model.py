@@ -1,4 +1,4 @@
-"""Metadatos estructurales del núcleo de stock, compras y acuerdos en DESA."""
+"""Metadatos estructurales del núcleo de stock, compras y acuerdos en PROD."""
 
 from __future__ import annotations
 

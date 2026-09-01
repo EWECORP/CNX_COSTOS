@@ -1,9 +1,9 @@
 ---
 id: CNX-COST-ARC-001
 titulo: Propuesta de arquitectura para costos comerciales
-estado: borrador
-version: 0.1
-fecha: 2026-08-31
+estado: aprobado-con-diseno-detallado-pendiente
+version: 1.0
+fecha: 2026-09-01
 propietario: por-definir
 documento_relacionado: CNX-COST-REL-001
 ---
@@ -25,7 +25,9 @@ El modelo publica tres métricas distintas:
 | `company_inventory_wac` | compañía, artículo, UOM, moneda | valuación consolidada del inventario existente |
 | `company_commercial_net_cost` | compañía, artículo, moneda, vigencia | precios, margen y decisiones comerciales |
 
-No deben exponerse bajo un único nombre ambiguo. El costo comercial puede incluir
+Esta arquitectura y las decisiones funcionales 1 a 21 fueron aprobadas
+conceptualmente el 1 de septiembre de 2026. No deben exponerse bajo un único
+nombre ambiguo. El costo comercial puede incluir
 condiciones estimadas o devengadas que no corresponden capitalizar en inventario;
 por eso no siempre coincide con el promedio consolidado.
 
@@ -72,14 +74,39 @@ promedio ponderado, último evento de stock, último evento de costo y versión.
 `cst_company_cost_position` consolida cantidades y valores de todos los sitios de
 una compañía. También referencia la versión vigente del costo neto comercial.
 
+`cst_site_daily_close` identifica y controla el cierre de una sucursal para una
+fecha de negocio: zona horaria, instante de corte, versión, estado, último evento
+incluido, cantidades de control y hash. `cst_site_daily_balance` conserva para esa
+versión la cantidad, valor y CPP final de cada artículo/UOM/moneda.
+
+El cierre diario es una proyección histórica del ledger, no otra autoridad de
+stock. Una reapertura crea una nueva versión de `cst_site_daily_close` y nuevas
+líneas; la versión anterior pasa a `SUPERSEDED` y nunca se actualizan sus importes.
+
 Las proyecciones pueden reconstruirse desde el ledger. La actualización debe ser
 transaccional, secuencial por artículo-sitio y protegida con versión optimista.
+
+### 3.1. Cierre diario por sucursal
+
+El proceso sólo puede marcar un cierre como `CLOSED` cuando:
+
+- alcanzó el watermark de eventos definido para la sucursal y fecha;
+- no existen eventos anteriores pendientes o rechazados sin resolución;
+- cantidad final reconcilia con la posición operativa certificada;
+- valor y CPP se reconstruyen desde el ledger;
+- la cantidad de posiciones esperadas coincide con las generadas;
+- se guardaron totales y hash de control.
+
+Estados propuestos: `CALCULATING`, `PROVISIONAL`, `CLOSED`, `SUPERSEDED` y
+`FAILED`. La reapertura se representa mediante una versión nueva que referencia a
+la anterior, no mediante edición de sus saldos. Sólo una versión puede ser el cierre vigente por
+compañía, sucursal y fecha de negocio.
 
 ### 4. Versiones de costo comercial
 
 `cst_commercial_cost_version` publica un costo único por artículo y vigencia, con
 su método, componentes, evidencia y hash de cálculo. Una versión puede estar en
-`DRAFT`, `APPROVED`, `PUBLISHED` o `SUPERSEDED`.
+`DRAFT`, `CALCULATED`, `UNDER_REVIEW`, `APPROVED`, `PUBLISHED` o `SUPERSEDED`.
 
 Pricing y márgenes deben consumir solamente versiones `PUBLISHED`, mientras que
 simulaciones pueden usar `DRAFT` de forma explícita.
@@ -111,6 +138,7 @@ El costo unitario capitalizable se congela al cerrar la recepción:
 precio base
 - descuentos de factura
 - bonificaciones atribuibles
+- rappel y acuerdos de compra estimados elegibles
 + flete capitalizable
 + impuestos no recuperables
 + otros cargos capitalizables
@@ -153,14 +181,14 @@ como venta y compra intercompany, no como transferencia interna.
 ### Ajustes físicos
 
 Un conteo que informa cantidad absoluta se convierte en un delta contra la
-posición previa. Una baja retira valor al costo promedio. Un alta necesita una
-política de valorización explícita: costo promedio vigente, costo comercial
-publicado o costo informado y aprobado.
+posición previa. Una baja retira valor al costo promedio. Un alta o sobrante
+ingresa al costo promedio local vigente y conserva motivo y aprobación.
 
 ### Devoluciones
 
 - A proveedor: usar el costo de la recepción original cuando exista trazabilidad;
-  de lo contrario aplicar la política de fallback y registrar la excepción.
+  sin documento original usar el precio de lista vigente y registrar por separado
+  valor comercial, valor contable y diferencia.
 - De cliente: revertir el costo de salida original cuando sea posible; fallback al
   costo promedio actual.
 
@@ -180,6 +208,40 @@ Para rappel mensual se recomienda devengar una tasa esperada sobre recepciones y
 realizar un `TRUE_UP` al liquidar. La diferencia se reparte entre inventario
 remanente y costo de mercadería vendida según una política aprobada. La estimación
 y la liquidación real deben conservarse como componentes distintos.
+
+Cuando un acuerdo de compras no identifique SKU, se asigna en orden a recepción o
+SKU, categoría/marca, proveedor y compras netas elegibles. Sin base objetiva, el
+importe se registra en resultados. Los acuerdos por publicidad, exhibición,
+financiación o servicios no reducen inventario.
+
+### Bonificaciones y merma
+
+Las unidades gratis del mismo artículo se suman a la cantidad recibida y el valor
+total pagado se distribuye sobre todas las unidades. Si la bonificación corresponde
+a otro SKU, el valor se distribuye usando precios relativos. No se registra el SKU
+bonificado en cero si eso distorsiona margen, transferencia o devolución.
+
+La merma física se registra en bruto cuando ocurre. Una bonificación que la
+compensa puede reducir costo y alimentar un indicador adicional de merma neta,
+pero no debe ocultar la pérdida operativa.
+
+### Impuestos
+
+La recuperabilidad se resuelve mediante una matriz versionada por compañía,
+impuesto, jurisdicción, artículo/categoría, proveedor, operación y vigencia:
+
+- IVA y percepciones recuperables: dato fuente de la interfaz SAP, fuera del costo;
+- impuestos no recuperables directamente atribuibles: integran costo;
+- recuperabilidad parcial: división explícita entre crédito y costo;
+- retenciones: crédito/cancelación tributaria, no costo;
+- clasificación incierta: provisional y ajustable al conciliar.
+
+### Transformaciones y recetas
+
+Una receta se registra mediante una orden de transformación. Los ingredientes
+salen al costo local; el producto elaborado ingresa con ingredientes más costos de
+conversión atribuibles. Rendimiento, merma, coproductos y subproductos quedan
+separados. No se modela como transferencia.
 
 ### Stock negativo
 
@@ -246,6 +308,43 @@ resuelto a artículos/sitios, base de cálculo, tasa, período y documento gener
 La clasificación contable/comercial pertenece a una política versionada, no a
 lógica fija dentro del consumidor.
 
+### BRIDGE y documentos de venta
+
+BRIDGE debe publicar cabecera, línea, artículo, sucursal, caja, precio, cantidad,
+promoción, impuestos, moneda y clave fiscal/idempotente. La línea comercial genera
+el movimiento de salida; Cost Management asigna el costo de mercadería vendida.
+La interfaz SAP consume el documento canónico; no reconstruye IVA ni ventas desde
+movimientos agregados de stock. SAP conserva los registros fiscal y contable
+oficiales.
+
+## Consistencia al cierre
+
+El cierre físico de una recepción confirma como una única unidad lógica:
+
+1. recepción cerrada;
+2. movimiento de cantidad;
+3. valorización provisional;
+4. actualización de posición local;
+5. posición en tránsito cuando corresponda;
+6. registro de outbox.
+
+Si no puede persistirse movimiento y valorización, la recepción queda en una
+excepción controlada y no en estado final silencioso. Factura, OCR, conciliación,
+interfaz SAP y publicación hacia consumidores pueden ejecutarse asincrónicamente
+con SLA, reintentos, monitoreo e idempotencia.
+
+## Aprobación, publicación y auditoría
+
+Compras valida condiciones y acuerdos; Operaciones cantidades, UOM y flete;
+Impuestos recuperabilidad; Contabilidad capitalización y resultados; Comercial
+aprueba la versión publicada para Pricing. Cambios manuales requieren cuatro ojos,
+motivo, vigencia, tolerancia y evidencia.
+
+El ledger es append-only. Conserva documento y hash, evento origen, fecha efectiva
+y de registración, valores antes/después, regla y versión, actor, aprobación,
+reversa y correlación con la referencia SAP. La retención y acceso se parametrizan
+por compañía y clase documental.
+
 ## Compatibilidad con la arquitectura de CONNEXA
 
 - Usa un esquema y prefijo propios: `cost_management.cst_*`.
@@ -272,15 +371,21 @@ política debe indicar moneda base, escala y método de redondeo.
 
 ## Secuencia de implementación sugerida
 
-1. Aprobar las decisiones funcionales de `03-decisiones-abiertas.md`.
-2. Normalizar contratos de recepción, transferencia y movimiento.
-3. Crear ledger, posiciones y reconciliación.
-4. Generar eventos de apertura desde stock y costo inicial certificados.
-5. Ejecutar en modo sombra y reconciliar cantidades/valores.
-6. Activar recepciones y salidas.
-7. Activar transferencias con costo transportado.
-8. Incorporar notas de crédito y acuerdos comerciales.
-9. Publicar costo comercial aprobado hacia Pricing y Analytics.
+1. Parametrizar las decisiones aprobadas de `03-decisiones-abiertas.md`.
+2. Certificar contratos de recepción, BRIDGE, transferencia y movimiento.
+3. Documentar la solicitud de cambio y preparar la migración Flyway para revisión
+   de Arquitectura y ejecución exclusiva de CORE.
+4. Crear ledger, posiciones, auditoría y reconciliación.
+5. Generar apertura desde stock y costo inicial certificados.
+6. Ejecutar en modo sombra y reconciliar cantidades/valores.
+7. Activar recepciones provisionales y ajustes documentales.
+8. Activar ventas, transferencias y transformaciones.
+9. Incorporar notas de crédito, impuestos y acuerdos comerciales.
+10. Publicar costo comercial y subledgers hacia Pricing, Analytics y Finanzas.
+
+El detalle de fases y criterios de salida se encuentra en
+`06-plan-de-implementacion.md`. El gobierno obligatorio de cambios está definido
+en `07-gobierno-cambios-base-datos.md`.
 
 ## Criterios mínimos de aceptación
 
@@ -288,8 +393,17 @@ política debe indicar moneda base, escala y método de redondeo.
 - Reversa más evento original deja cantidad y valor iniciales.
 - Una transferencia interna sin cargos conserva el valor consolidado.
 - La suma de posiciones locales coincide con la posición de compañía.
+- Cada sucursal/fecha posee como máximo una versión diaria vigente.
+- El detalle diario coincide con la posición reconstruida al instante de corte.
+- Reabrir y repetir un cierre conserva la versión anterior y publica otra con sus
+  diferencias explicables.
 - Cada posición identifica su último evento aplicado.
 - El ledger reproduce exactamente la posición actual.
 - La cantidad espejo reconcilia con `stk_stock` dentro de tolerancia acordada.
 - Los eventos tardíos siguen una regla de reapertura o ajuste documentada.
 - Pricing conoce la versión y composición del costo consumido.
+- El cierre de recepción nunca queda final sin movimiento y costo provisional.
+- Una bonificación reduce costo sin compensar la merma física registrada.
+- Un impuesto recuperable nunca capitaliza y uno no recuperable aplica la matriz
+  vigente.
+- El replay de un período cerrado produce deltas auditables y es determinístico.

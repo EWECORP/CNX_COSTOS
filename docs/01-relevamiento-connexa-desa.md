@@ -1,33 +1,56 @@
 ---
 id: CNX-COST-REL-001
-titulo: Relevamiento de costos y stock en CONNEXA DESA
-estado: borrador
-version: 0.1
-fecha: 2026-08-31
+titulo: Relevamiento comparado de costos y stock en CONNEXA
+estado: validado-lectura
+version: 1.0
+fecha: 2026-09-01
 propietario: por-definir
-ambiente: Connexa DESA
+ambiente: PROD, TEST y DESA
 ---
 
-# Relevamiento de costos y stock en CONNEXA DESA
+# Relevamiento comparado de costos y stock en CONNEXA
+
+> El nombre físico del archivo se conserva para no romper referencias históricas.
+> La primera inspección rotulada como DESA utilizó en realidad `PGP_HOST`; por eso
+> este documento corrige la atribución y agrega la comparación con `PGT_HOST` y
+> `PGD_HOST`.
 
 ## Alcance y fuentes
 
-El relevamiento fue realizado el 31 de agosto de 2026 mediante consultas de solo
-lectura sobre `connexa_platform_ms`. Se inspeccionaron catálogo, restricciones,
-estadísticas y agregados; no se modificó la base.
+El relevamiento se realizó entre el 31 de agosto y el 1 de septiembre de 2026
+mediante sesiones PostgreSQL forzadas a solo lectura. Se inspeccionaron catálogo,
+restricciones, migraciones, vistas, estadísticas y agregados; no se modificó
+ninguna base.
 
 Fuentes utilizadas:
 
-- catálogo PostgreSQL de DESA;
+- catálogos PostgreSQL de PROD (`PGP_*`), TEST (`PGT_*`) y DESA (`PGD_*`);
 - datos agregados de los esquemas `inventory`, `stock_management`,
   `procurement_and_sourcing` y `commercial_agreements`;
 - código de sincronización de productos de `C:\ETL\CNX_DIARCO_SYNC_V2`;
 - historial Flyway disponible en la propia base.
 
-El endpoint solicitado para `Connexa_DESA` no expone PostgreSQL directamente a
-esta red. El endpoint de base configurado en los procesos ETL sí conecta con
-`connexa_platform_ms`. No se registran direcciones ni credenciales en este
-documento.
+No se registran direcciones, usuarios ni credenciales en este documento. La
+configuración permanece exclusivamente en el `.env` local.
+
+## Lectura correcta de la transición
+
+CONNEXA complementa actualmente a SGM y está absorbiendo de forma gradual el
+movimiento de stock y las ventas por artículo, sucursal, precio y cantidad
+provenientes de BRIDGE. Por eso un volumen bajo en las tablas nuevas no demuestra
+ausencia del proceso: parte del historial continúa en estructuras `public.fnd_*`,
+mientras el modelo objetivo se desarrolla y prueba en TEST/DESA.
+
+| Ambiente | Modelo observado | Evidencia relevante |
+|---|---|---:|
+| PROD | microservicios más legado `public` | 117.334 posiciones `stk_stock`, 15 movimientos `stk_stock_movement` y 337.436 movimientos `public.fnd_stock_movement` |
+| TEST | modelo más adelantado | nuevo esquema `inventory.inv_stock*`, creado por migración del 31/08/2026 pero todavía vacío; conserva 337.436 movimientos legacy |
+| DESA | modelo monolítico anterior | 44.736 posiciones y 8.839.025 movimientos en `public.fnd_*`, con datos hasta 23/04/2026 |
+
+La tabla nueva `inventory.inv_stock_movement` absorbe movimiento físico, pero su
+estructura sigue siendo de cantidades: no contiene importe, costo, moneda,
+posición antes/después ni referencias documentales suficientes para funcionar
+como Kardex valorizado.
 
 ## Resumen ejecutivo
 
@@ -36,7 +59,8 @@ CONNEXA ya dispone de entidades para productos, sitios, stock actual, movimiento
 embargo, hoy no existe un ledger central de costo ni una posición de valor/costo
 por artículo-sucursal.
 
-Los campos `base_price` actuales son precios maestros replicados, no un costo
+Los campos `base_price` y la tabla de TEST
+`t055_articulos_condcompra_costos` son precios/costos maestros o snapshots, no un costo
 promedio ponderado calculado a partir de movimientos. El stock actual conserva
 cantidad, pero no valor, costo promedio ni referencia al último movimiento que lo
 explica. Por eso el modelo vigente no alcanza para trazabilidad histórica,
@@ -89,24 +113,34 @@ Perfil observado:
 `created_at` está entre enero y febrero de 2026, pero no permite demostrar la
 frescura de la cantidad porque puede no actualizarse con cada cambio.
 
-### Movimientos de stock
+### Movimientos de stock y coexistencia
 
 El catálogo `stk_stock_movement_type` es amplio y contempla recepciones,
 transferencias, ventas, devoluciones, inventarios, mermas y ajustes. Hay problemas
 de calidad en el catálogo: códigos externos duplicados, errores tipográficos y
 semánticas de `overrides_existing_stock` que deben validarse.
 
-La tabla final `stock_management.stk_stock_movement` contiene solo 15 filas. Ningún
+En PROD, `stock_management.stk_stock_movement` contiene solo 15 filas. Ningún
 par artículo-sitio de esas filas coincide con las 117.334 posiciones actuales.
-Consecuentemente, hoy no puede responderse cuál fue el último movimiento que
-explica cada stock.
+Esto no se interpreta como falla por sí solo: el legado
+`public.fnd_stock_movement` conserva 337.436 movimientos y el proceso de absorción
+está en curso. Aun combinando ambas fuentes, falta una relación certificada que
+identifique el último movimiento aplicado a cada posición actual.
 
 Procurement contiene además 13.132 filas en
-`pas_stock_movement_replicator`, todas con estado `PENDING`, y ninguna comparte ID
+`pas_stock_movement_replicator`, todas con estado `PENDING` al momento de la
+medición, y ninguna comparte ID
 con las 15 filas del servicio de Stock. Esas filas cubren 5.181 pares
 artículo-sitio, pero solo 3.383 posiciones actuales. Esto es evidencia de una
 brecha de publicación o de una semántica no documentada; no se afirma que sea una
 falla de runtime sin revisar el servicio productor y consumidor.
+
+TEST agregó `inventory.inv_stock`, `inventory.inv_stock_movement` e
+`inventory.inv_stock_movement_type`. La migración fue aplicada el 31 de agosto de
+2026 y las tres tablas estaban vacías al 1 de septiembre. Sólo tenían índices de
+clave primaria; faltaban unicidad de posición e índices operativos por
+artículo-sucursal-fecha. El movimiento contiene cantidad, tipo, estado y
+`custom1..4`, pero no valorización ni linaje documental explícito.
 
 ### Estructuras que parecen un Kardex, pero no lo son
 
@@ -176,9 +210,52 @@ El esquema `commercial_agreements` ya modela:
 - contraprestaciones;
 - tipo de documento a generar, incluida solicitud de nota de crédito.
 
-Las tablas transaccionales analizadas están vacías en DESA. La capacidad de
+Las tablas transaccionales analizadas están vacías en PROD. La capacidad de
 modelado existe, pero todavía no hay datos con los cuales validar liquidación,
 devengamiento o distribución al costo.
+
+### Ventas BRIDGE y consolidación comercial
+
+El modelo existente contempla cabecera de venta, artículos, pagos y promociones.
+La línea posee SKU, cantidad, precio, base imponible y alícuota de IVA. Sin
+embargo, en TEST y PROD el nuevo bloque `pas_sale_document*` tenía sólo una
+cabecera y ninguna línea; el histórico `public.fnd_sale_document*` llegaba al 19 de
+septiembre de 2024.
+
+La vista `supply_planning.mv_sales_from_stock_movement` agrega cantidades de
+movimientos tipo 3 de los últimos 21 días. Es útil para demanda, pero no conserva
+documento, precio ni desglose fiscal y no sustituye el contrato comercial de
+BRIDGE.
+
+### Snapshots y cierre diario de sucursal
+
+Existen antecedentes de posición diaria, pero ninguno constituye todavía un
+cierre valorizado vigente y certificado:
+
+- `public.fnd_stock_snapshot` conserva cantidades históricas por fecha, artículo y
+  sitio. En PROD, las últimas fechas observadas fueron del 26/08/2025 al
+  01/09/2025, con 139.440 filas, 53 sitios y 7.376 artículos por día;
+- `stock_management.stk_stock_snapshot` existe vacío en PROD. En TEST tiene datos
+  de cobertura y fechas irregulares; además, `date` es `varchar` y mezcla fechas
+  con timestamps;
+- `stk_stock_count_snapshot` corresponde a conteos físicos, no al cierre diario;
+- `stock_management.pdd_branch_stock_position` existe sólo en TEST y es una
+  posición particionada de planificación/distribución. Contenía 173.922 filas para
+  tres fechas de agosto de 2026, 47 sucursales y 1.950 artículos, con stock físico,
+  entradas pendientes, tránsito, compromisos y stock neto.
+
+PDD conserva buena trazabilidad a snapshots fuente, corridas, checksums y estados,
+pero no es la autoridad del cierre contable. El modelo de costos incorpora por eso
+`cst_site_daily_close` y `cst_site_daily_balance`, reconstruibles desde el Kardex y
+reconciliables contra estas fuentes.
+
+### Costos de referencia en TEST
+
+`procurement_and_sourcing.t055_articulos_condcompra_costos` contenía 1.818.954
+filas, con extracción al 28 de agosto de 2026. Aporta precio de lista, costo base,
+costo efectivo, descuentos, impuestos y datos de última recepción/OC. Se usará
+como evidencia para apertura, comparación y costo proyectado; no como ledger de
+eventos.
 
 ## Brechas para el objetivo de costos
 
@@ -197,11 +274,17 @@ devengamiento o distribución al costo.
    el promedio.
 10. No hay reconciliación demostrable entre ledger de movimientos y posición de
     stock.
+11. El contrato nuevo de ventas todavía no tiene volumen representativo ni todos
+    los campos necesarios para una interfaz fiscal completa y reconciliable con SAP.
+12. TEST, PROD y DESA presentan distinta evolución de migraciones, constraints y
+    datos; el modelo objetivo debe certificarse específicamente en TEST antes de
+    promoverse.
 
 ## Conclusión
 
 La extensión debe construirse como un bounded context de costos que consuma los
-eventos ya originados por Procurement, Stock y Acuerdos Comerciales. No conviene
+eventos originados por Procurement, Inventory/Stock, BRIDGE y Acuerdos
+Comerciales. No conviene
 agregar solamente una columna de costo a `stk_stock`: eso resolvería la lectura
 actual, pero no la trazabilidad, reversiones, retroactividad, auditoría ni el costo
 comercial consolidado.

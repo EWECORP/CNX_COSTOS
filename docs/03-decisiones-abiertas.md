@@ -1,55 +1,104 @@
 ---
 id: CNX-COST-DEC-001
-titulo: Decisiones abiertas para el modelo de costos
-estado: borrador
-version: 0.1
-fecha: 2026-08-31
+titulo: Decisiones funcionales del modelo de costos
+estado: aprobado-con-parametros-pendientes
+version: 1.0
+fecha: 2026-09-01
 propietario: por-definir
 documento_relacionado: CNX-COST-ARC-001
 ---
 
-# Decisiones abiertas para el modelo de costos
+# Decisiones funcionales del modelo de costos
 
-Estas decisiones requieren validación de Comercial, Finanzas/Contabilidad,
-Compras, Operaciones y Producto antes de implementar.
+Las siguientes decisiones fueron confirmadas por Dirección el 1 de septiembre de
+2026. Son la base funcional para el diseño detallado; no sustituyen la aprobación
+contable, impositiva ni técnica de cada parametrización.
 
-## Bloqueantes
+## Decisiones aprobadas
 
-1. **Definición de costo neto comercial.** Confirmar componentes incluidos:
-   descuentos de factura, bonificaciones, impuestos internos, flete, rappel
-   estimado/real, notas de crédito, servicios y acuerdos financieros.
-2. **Uso de las tres métricas.** Aprobar que valuación local, valuación consolidada
-   y costo comercial para pricing sean métricas separadas.
-3. **Momento de reconocimiento.** Definir si el costo nace al cierre físico de
-   recepción, con factura, con triple control o mediante una estimación y ajuste
-   posterior.
-4. **Rappel y acuerdos retroactivos.** Definir devengamiento, tasa esperada, true-up
-   y distribución entre inventario remanente y resultados.
-5. **Stock negativo.** Aprobar costo provisional y tratamiento de diferencias al
-   regularizar.
-6. **Transferencias.** Confirmar costo transportado, inclusión de fletes y uso de
-   una posición en tránsito.
-7. **UOM canónica.** Definir unidad de valuación por artículo y reglas para bulto,
-   unidad, peso y productos fraccionables.
-8. **Moneda.** Definir moneda funcional por compañía, tipo de cambio, fuente y fecha
-   aplicable.
+1. El costo neto comercial contempla precio, descuentos, bonificaciones,
+   impuestos internos y no recuperables, flete, rappel estimado/real, NC/ND y
+   acuerdos. Cada componente declara si afecta inventario, costo comercial o
+   resultados.
+2. Se publican tres métricas separadas: costo promedio local, valuación consolidada
+   de compañía y costo neto comercial para pricing.
+3. El costo nace al cierre físico de la recepción, con estimación basada en la OC;
+   factura, NC y conciliación producen ajustes posteriores sin reingresar unidades.
+4. Rappel y acuerdos de compra atribuibles a mercadería reducen costo. Se devengan
+   cuando son medibles y suficientemente probables, con `TRUE_UP` al liquidarse.
+   Servicios, publicidad, exhibición y financiación van a resultados.
+5. El stock negativo utiliza costo provisional. La regularización genera replay y
+   diferencias explícitas, sin reescribir eventos históricos.
+6. Las transferencias llevan costo transportado, posición `IN_TRANSIT` y flete
+   capitalizable. No alteran el consolidado salvo cargos externos.
+7. La UOM de valuación es la unidad del artículo; para pesables es kilogramo. Los
+   bultos se convierten mediante el factor de compra del proveedor congelado en la
+   OC y en el evento.
+8. La moneda funcional es ARS. El modelo conservará moneda e importe original,
+   tipo de cambio, fecha y fuente para soportar operaciones futuras.
+9. Dentro de la compañía se usan transferencias sin resultado. Entre compañías se
+   registran compra/venta intercompany. Recetas y rotisería se modelan como
+   transformación: consumo de ingredientes al costo local más costos de conversión.
+10. Una devolución sin documento original se valoriza al precio de lista vigente,
+    conservando por separado valor comercial, valor contable y excepción aplicada.
+11. Ajustes positivos y sobrantes ingresan al costo promedio local. Los negativos
+    salen al costo local vigente.
+12. Los períodos cerrados admiten reapertura y replay mediante nuevas versiones y
+    asientos delta; nunca mediante edición destructiva.
+13. El costo comercial usa una combinación parametrizable de última compra,
+    promedio de recepciones, lista vigente, proveedor, disponibilidad, acuerdos,
+    rappel, flete e impuestos.
+14. La OC elegida determina el costo de la recepción. Las listas de todos los
+    proveedores se conservan para abastecimiento y costo proyectado, pero no se
+    mezclan con el costo contable de la compra recibida.
+15. Los acuerdos sin SKU se distribuyen por esta jerarquía: recepción/SKU,
+    categoría o marca, proveedor y finalmente compras netas elegibles. Sin una base
+    objetiva, el concepto va a resultados.
+16. La mercadería bonificada integra la cantidad total recibida y reduce el costo
+    unitario. Si el SKU bonificado es distinto, la contraprestación se distribuye
+    por precios relativos. La bonificación no oculta la merma física.
+17. Impuestos recuperables y percepciones computables no integran costo y se
+    transportan como datos fuente hacia SAP, que mantiene el registro fiscal
+    oficial. Los no recuperables y directamente atribuibles sí integran costo; la
+    recuperabilidad parcial se divide explícitamente.
+18. El costo comercial sigue `DRAFT -> CALCULATED -> UNDER_REVIEW -> APPROVED ->
+    PUBLISHED -> SUPERSEDED`, con cuatro ojos, tolerancias, vigencia, motivo de
+    override y segregación de funciones.
+19. El ledger es inmutable, idempotente, reproducible y trazable a documento,
+    regla, usuario, aprobación y asiento. La retención se parametriza por compañía
+    y clase documental conforme a los estándares de auditoría aplicables.
+20. Movimiento, valorización provisional, posición local y outbox se confirman de
+    forma síncrona al cierre físico. Los consumidores posteriores pueden procesar
+    asincrónicamente con SLA, reintentos e idempotencia.
+21. CONNEXA no implementa contabilidad, subledger de proveedores, liquidación
+    fiscal, pagos ni reporting legal propios. Conserva la evidencia y el detalle
+    necesarios para costo e interfaces completas con SAP, sistema de registro
+    oficial para esas funciones salvo decisión explícita del blueprint.
 
-## Importantes para el diseño detallado
+## Gobierno de cambios de base de datos
 
-9. Alcance de compañía y tratamiento intercompany, e Interdepartamental, Ejemplo RECETAS quue usa rotiseria para producir comida en el local.
-10. Política para devoluciones sin documento original.
-11. Política de valorización de ajustes positivos y sobrantes.
-12. Períodos cerrados: reapertura, replay o ajuste en período corriente.
-13. Horizonte del costo comercial: última compra, promedio de recepciones, lista
-    vigente o combinación parametrizable.
-14. Proveedor elegido cuando hay múltiples fuentes de abastecimiento.
-15. Distribución de acuerdos sin alcance a SKU: venta, compra, stock, categoría u
-    otra base.
-16. Tratamiento de mercadería bonificada y cantidad gratis.
-17. Recuperabilidad de IVA e impuestos por compañía/artículo.
-18. Flujo de aprobación y publicación de nuevas versiones hacia Pricing.
-19. Retención del ledger y requerimientos de auditoría.
-20. SLA de actualización y consistencia: síncrono al cierre o consistencia eventual.
+Se establece como restricción de implementación:
+
+- únicamente el grupo CORE realiza cambios en las bases CONNEXA;
+- cada cambio comienza con una solicitud documentada;
+- el equipo del proyecto genera un script Flyway, pero no lo ejecuta;
+- Arquitectura revisa modelo, impacto, compatibilidad, performance y recuperación;
+- CORE implementa y promueve el cambio de manera escalonada;
+- cada ambiente requiere evidencia y autorización antes de avanzar al siguiente;
+- una corrección posterior se realiza con una nueva migración, nunca modificando
+  una migración ya aplicada.
+
+## Parámetros pendientes, no decisiones conceptuales
+
+- matriz de recuperabilidad por impuesto, compañía, jurisdicción, operación y
+  vigencia;
+- tolerancias de cantidad, precio, impuesto y total por proveedor/categoría;
+- umbrales de materialidad y circuito nominal de aprobadores;
+- tasas esperadas, probabilidad y método de prorrateo por tipo de acuerdo;
+- fuente y convención de tipo de cambio;
+- plazos de retención y clasificación de información;
+- SLA cuantitativo para publicación, replay, conciliación y recuperación;
+- reglas de costos de conversión, rendimiento, merma y subproductos por receta.
 
 ## Datos y contratos a corregir o certificar
 
@@ -64,7 +113,7 @@ Compras, Operaciones y Producto antes de implementar.
 - Depurar catálogo de tipos de movimiento y códigos duplicados.
 - Definir si las 1.012 posiciones negativas son válidas o errores de integración.
 
-## Próximo taller recomendado
+## Próximo taller de parametrización
 
 Realizar un taller de 90 minutos con un caso completo y documentos reales
 anonimizados:
@@ -76,5 +125,5 @@ anonimizados:
 5. nota de crédito mensual y rappel;
 6. cálculo esperado de las tres métricas antes y después de cada paso.
 
-El resultado del taller debe ser una matriz de reglas aprobada, no solamente una
-fórmula general.
+El resultado debe ser una matriz versionada de reglas y casos esperados, utilizable
+como especificación y como fixture de pruebas.

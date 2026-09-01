@@ -1,13 +1,14 @@
 ---
 id: CNX-COST-DOC-001
 titulo: Documentos de recepción y conciliación de compras
-estado: borrador
-version: 0.1
-fecha: 2026-08-31
+estado: aprobado-con-parametros-pendientes
+version: 1.0
+fecha: 2026-09-01
 propietario: por-definir
 documentos_relacionados:
   - CNX-COST-ARC-001
   - CNX-COST-KDX-001
+  - CNX-COST-ADR-002
 ---
 
 # Documentos de recepción y conciliación de compras
@@ -16,10 +17,13 @@ documentos_relacionados:
 
 Incorporar facturas, remitos, notas de crédito, notas de débito y otros documentos
 asociados a la entrega, conciliarlos contra órdenes de compra y recepciones, y
-producir una valorización aprobada y trazable para el Kardex, el subledger fiscal y
-el subledger contable.
+producir una valorización aprobada y trazable para el Kardex y una interfaz
+completa con SAP, sin duplicar los subledgers oficiales del ERP.
 
-## Hallazgos en DESA
+## Hallazgos en producción
+
+La medición inicial estaba rotulada como DESA, pero la conexión utilizada
+correspondía a `PGP_HOST`. Las cifras siguientes son, por lo tanto, de producción.
 
 CONNEXA ya posee un circuito significativo de captura documental en
 `mail_processor`:
@@ -28,7 +32,7 @@ CONNEXA ya posee un circuito significativo de captura documental en
 |---|---:|
 | Correos | 12.361 |
 | Adjuntos | 12.144 |
-| Documentos extraídos | 11.523 |
+| Documentos extraídos | 11.559 al actualizar el perfil |
 | Líneas de producto extraídas | 62.910 |
 | Detalles de IIBB | 25.935 |
 | Otros impuestos | 2.413 |
@@ -45,12 +49,12 @@ Sin embargo, el circuito no está integrado relacionalmente con Procurement:
 - el OCR guarda referencias de compra y recepción como texto, no como IDs;
 - no existe vínculo entre línea OCR, línea de OC y línea de recepción;
 - no hay estado persistido de conciliación con SGM ni respuesta por línea;
-- no existe una entidad canónica de factura/NC dentro de DESA; las entidades
+- no existe una entidad canónica de factura/NC dentro de producción; las entidades
   `acp_purchase_invoice*` visibles son enlaces a otro ambiente/esquema.
 
 ### Calidad observada de la extracción
 
-Sobre 11.523 documentos:
+El perfil detallado original sobre 11.523 documentos mostró:
 
 - 11.218 tienen CUIT de proveedor;
 - 11.060 tienen tipo de comprobante;
@@ -101,8 +105,15 @@ provisional, ajustes a costo definitivo y NC/ND en el Kardex.
 
 ### Tax y Accounting
 
-Reciben los componentes fiscales y contables aprobados. No deben reconstruirlos
-consultando directamente el OCR.
+SAP recibe mediante interfaces los componentes fiscales y contables aprobados. No
+debe reconstruirlos consultando directamente el OCR. CONNEXA conserva esos datos
+como evidencia de costo e interfaz, no como subledger oficial.
+
+### SAP
+
+Es el sistema de registro de cuentas a pagar, contabilización, impuestos, pagos y
+reportes legales, salvo excepción aprobada en el blueprint. Una aprobación local
+habilita el ajuste de costo y la interfaz; no equivale a contabilización SAP.
 
 ## Modelo conceptual propuesto
 
@@ -162,7 +173,7 @@ una factura anterior.
 `ap_match_exception` registra diferencias estructuradas y su resolución.
 `ap_match_approval` conserva usuario, rol, fecha, decisión y motivo.
 
-### Integración con SGM
+### Integración transitoria con SGM y objetivo SAP
 
 `ap_external_exchange` debe conservar:
 
@@ -178,7 +189,9 @@ una factura anterior.
 Mientras SGM sea quien concilia, CONNEXA debe persistir el paquete enviado y
 recibir el resultado detallado. Un estado genérico `SENT` no alcanza para valorizar
 ni auditar. En el modelo objetivo, SGM queda detrás de un conector y el contrato
-canónico no depende de su estructura particular.
+canónico no depende de su estructura particular. La salida hacia SAP debe incluir
+acuse técnico, resultado funcional, referencia SAP y reconciliación; CONNEXA no
+reproduce el posting contable internamente.
 
 ## Conciliación de tres vías
 
@@ -230,14 +243,16 @@ RECEIVED -> EXTRACTED -> VALIDATED -> IDENTIFIED
 ### Conciliación
 
 ```text
-PENDING -> AUTO_MATCHED -> APPROVED -> POSTED
+PENDING -> AUTO_MATCHED -> APPROVED -> READY_FOR_EXPORT
+                                      -> EXPORTED -> EXTERNAL_ACCEPTED
         -> PARTIAL_MATCH
         -> EXCEPTION -> MANUAL_MATCH -> APPROVED
         -> REJECTED
 ```
 
-La aprobación y el posting deben ser estados distintos. Aprobar una factura
-confirma la conciliación; publicar genera efectos en Cost, Tax y Accounting.
+La aprobación operativa y la aceptación de SAP deben ser estados distintos.
+Aprobar confirma la conciliación y autoriza el costo/interfaz; sólo la respuesta de
+SAP confirma el registro oficial.
 
 ## Reglas de tolerancia
 
@@ -271,6 +286,10 @@ estado_costo   = PROVISIONAL
 
 Esto permite disponer de stock valorizado aun si la factura llega después.
 
+El cierre físico y este asiento provisional forman una única unidad lógica. Si no
+se puede persistir movimiento, valorización, posición y outbox, la recepción debe
+quedar en excepción y no cerrada silenciosamente.
+
 ### 2. Factura conciliada
 
 Al aprobar la conciliación:
@@ -282,9 +301,10 @@ valor_delta    = costo capitalizable facturado - valor provisional asignado
 estado_costo   = FINAL o PARTIALLY_FINAL
 ```
 
-El IVA recuperable y las percepciones no deben capitalizarse automáticamente. Su
-tratamiento depende de política fiscal/contable versionada. Impuestos internos,
-fletes y otros cargos requieren clasificación explícita.
+El IVA recuperable y las percepciones computables no capitalizan. Los impuestos
+no recuperables directamente atribuibles, impuestos internos y fletes
+capitalizables sí integran costo según una matriz fiscal/contable versionada. Una
+recuperabilidad parcial divide explícitamente crédito fiscal y costo.
 
 ### 3. Nota de crédito o débito
 
@@ -307,11 +327,11 @@ Email / portal / EDI / carga en recepción
                   │
         Excepciones y aprobación
                   │
-      ┌───────────┼────────────┐
-      ▼           ▼            ▼
-   Kardex      Fiscal      Contabilidad
-      │
-   costo definitivo
+      ┌───────────┴────────────┐
+      ▼                        ▼
+   Kardex                Interfaz SAP
+      │                        │
+ costo definitivo      acuse y referencia SAP
 ```
 
 ## Controles mínimos
@@ -324,19 +344,30 @@ Email / portal / EDI / carga en recepción
 6. Ninguna línea se valoriza sin asignación a artículo y recepción, salvo cargos
    generales con método de distribución aprobado.
 7. Reversas y rectificaciones; nunca borrado del documento contabilizado.
-8. Separación de funciones entre corrección, conciliación, aprobación y posting.
-9. Trazabilidad completa de envíos y respuestas de SGM.
-10. Reconciliación de cantidad e importe entre documentos y subledgers.
+8. Separación entre corrección, conciliación, aprobación e interfaz SAP.
+9. Trazabilidad completa de envíos y respuestas de SGM/SAP.
+10. Reconciliación de cantidad e importe entre documentos CONNEXA y registros SAP.
 
-## Decisiones a cerrar
+## Decisiones aplicables
 
-- Si CONNEXA o SGM será autoridad de conciliación en el modelo objetivo.
-- Momento exacto de valorización provisional y final.
-- Tolerancias por tipo de operación.
-- UOM y factores para bultos, unidades y peso.
-- Método de prorrateo de descuentos/cargos de cabecera.
-- Tratamiento de IVA, IIBB, impuestos internos, percepciones y fletes.
-- Aprobaciones requeridas para diferencias y documentos manuales.
-- Política para facturas sin OC y servicios sin recepción.
-- Política para NC sin referencia inequívoca a factura/línea.
-- Retención, acceso y cifrado de originales documentales.
+- El costo provisional nace al cierre físico con precio y condiciones de la OC.
+- Pesables se concilian y valúan en kilogramos; bultos usan el factor de compra del
+  proveedor congelado en la OC y recepción.
+- Factura, NC y ND producen ajustes de valor sin duplicar cantidad.
+- Acuerdos atribuibles a compras reducen costo; servicios comerciales o financieros
+  van a resultados.
+- Bonificaciones forman parte de la cantidad recibida y reducen el costo unitario.
+- Períodos cerrados se corrigen mediante reapertura, replay y asientos delta.
+- La evidencia y sus versiones se conservan conforme a estándares de auditoría.
+
+## Parámetros y definiciones de integración pendientes
+
+- autoridad y fecha objetivo para que CONNEXA reemplace a SGM en conciliación;
+- tolerancias por compañía, proveedor, categoría y tipo de documento;
+- métodos de prorrateo por tipo de cargo o descuento;
+- matriz impositiva de recuperabilidad y vigencia;
+- aprobadores y umbrales de materialidad;
+- política para facturas sin OC, servicios sin recepción y NC sin referencia;
+- retención, acceso, cifrado y clasificación de originales;
+- contrato detallado de intercambio y respuesta por línea mientras continúe SGM.
+- RACI, blueprint, objetos de negocio y contratos de interfaz SAP.

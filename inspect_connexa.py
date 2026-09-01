@@ -1,7 +1,6 @@
-"""Relevamiento de solo lectura del esquema de Connexa DESA.
+"""Relevamiento de solo lectura del esquema de Connexa PROD.
 
-Usa las credenciales existentes de ETL_DIARCO y fuerza la sesión PostgreSQL
-en modo read-only. No imprime secretos.
+Usa `PGP_*`, fuerza la sesión PostgreSQL en modo read-only y no imprime secretos.
 """
 
 from __future__ import annotations
