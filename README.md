@@ -23,3 +23,4 @@ configuración ya existente del entorno ETL local.
 
 Todo el contenido es `borrador`. No constituye una definición funcional aprobada
 ni autoriza cambios en ambientes de CONNEXA.
+# CNX_COSTOS
