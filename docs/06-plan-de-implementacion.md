@@ -24,21 +24,22 @@ ejecución en sombra y reconciliación antes de convertir a CONNEXA en autoridad
 operativa. SAP conserva las funciones ERP oficiales definidas en
 `11-frontera-integracion-sap.md`.
 
-## Fase 0A — Blueprint y frontera SAP
+## Fase 0A — Frontera y adaptadores contables
 
 Entregables:
 
-- RACI por proceso y dato entre CONNEXA, SAP, SGM y BRIDGE;
+- RACI por proceso y dato entre CONNEXA, el sistema contable, SGM y BRIDGE;
 - sistema de registro por objeto y por campo;
-- catálogo y versión de interfaces SAP;
+- contrato canónico y catálogo de adaptadores contables por cliente;
 - mapeo de claves y objetos organizativos;
-- estados técnicos/funcionales, acuses, rechazos y referencias SAP;
+- estados técnicos/funcionales, acuses, rechazos y referencias externas;
 - estrategia de idempotencia, reversa, reintento y reconciliación;
-- fit-gap del bloque propuesto `accounts_payable`.
+- mapeo SAP para DIARCO, sin condicionar el núcleo `accounts_payable`.
 
-Criterio de salida: Arquitectura confirma qué funciones son propias de CONNEXA y
-qué tablas de conciliación son realmente necesarias. Sin esta salida no se aplica
-la cuarta migración candidata.
+Criterio de salida: Arquitectura confirma la frontera entre las funciones
+operativas de CONNEXA y las funciones oficiales del sistema contable. Esta fase no
+bloquea el núcleo `accounts_payable`; sí bloquea la activación productiva de cada
+adaptador externo.
 
 ## Fase 0 — Gobierno y parametrización
 
@@ -111,6 +112,7 @@ Entregables:
 - costo provisional síncrono al cierre de recepción;
 - repositorio documental, OCR versionado y documento comercial canónico;
 - conciliación OC–recepción–factura/NC, excepciones y aprobaciones;
+- emisión y seguimiento de solicitudes de NC por diferencias reclamables;
 - ajustes a costo final y clasificación impositiva necesaria para la interfaz;
 - integración temporal con SGM mediante un conector trazable.
 
@@ -130,28 +132,31 @@ Entregables:
 Criterio de salida: conservación de cantidad y valor en transferencias internas y
 trazabilidad venta–salida–costo–margen.
 
-## Fase 6 — Acuerdos, costo comercial e interfaces SAP
+## Fase 6 — Acuerdos, costo comercial e interfaces contables
 
 Entregables:
 
 - devengamiento, liquidación y `TRUE_UP` de rappel;
 - distribución por recepción, SKU, categoría, proveedor o compras elegibles;
 - workflow y publicación versionada del costo comercial;
-- interfaces completas hacia SAP con componentes de costo, impuestos fuente y
+- publicación del Costo Neto Comercial Unificado para Pricing y margen objetivo;
+- contrato analítico de costo de venta local para rentabilidad y performance por sucursal;
+- interfaces completas hacia el sistema contable con componentes de costo, impuestos fuente y
   referencias operativas necesarias;
-- recepción de acuses técnicos, resultados funcionales y número SAP;
-- reconciliación de totales y documentos entre CONNEXA y SAP;
+- recepción de acuses técnicos, resultados funcionales y referencia externa;
+- reconciliación de totales y documentos entre CONNEXA y el sistema contable;
 - contratos de consumo para Pricing, Analytics y Finanzas.
 
 Criterio de salida: inventario y costos CONNEXA reconcilian con los documentos y
-registros oficiales SAP sin doble contabilización ni doble obligación fiscal.
+registros oficiales del sistema contable sin doble contabilización ni doble
+obligación fiscal.
 
 ## Orden inmediato de trabajo
 
 1. Nombrar responsables y convocar el taller de casos dorados.
 2. Certificar el contrato real de cierre de recepción y el flujo nuevo de BRIDGE.
 3. Definir el corte de apertura y fuentes autorizadas de costo inicial.
-4. Aprobar RACI, blueprint y contratos SAP antes de autorizar tablas de conciliación.
+4. Aprobar el núcleo de conciliación y definir en paralelo el adaptador SAP de DIARCO.
 5. Someter solicitud, migraciones, controles y políticas a revisión contable, impositiva,
    seguridad y arquitectura.
 6. Entregar a CORE el paquete aprobado para implementación escalonada.

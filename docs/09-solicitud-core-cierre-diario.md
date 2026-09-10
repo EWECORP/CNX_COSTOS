@@ -22,20 +22,20 @@ documentos_relacionados:
 Se solicita a CORE y Arquitectura revisar el modelo físico integral diseñado hasta
 el momento. La revisión comprende cuatro migraciones candidatas, pero la
 autorización debe ser escalonada: núcleo de costos, cierre y documentos pueden
-evaluarse para **Desarrollo (`PGD_HOST`)**; `accounts_payable` queda condicionada
-al fit-gap y blueprint de integración con SAP. `PGT_HOST` es Testing y queda fuera
+evaluarse para **Desarrollo (`PGD_HOST`)**, incluido `accounts_payable` como
+capacidad operativa agnóstica del sistema contable. `PGT_HOST` es Testing y queda fuera
 de esta primera implementación; cualquier promoción requiere evidencia y autorización.
 
 ## Alcance físico
 
-La solicitud inventaría tres esquemas y 31 tablas nuevas. Inventariar no implica
+La solicitud inventaría tres esquemas y 32 tablas nuevas. Inventariar no implica
 autorizar todas para implementación:
 
 | Esquema | Tablas | Alcance |
 |---|---:|---|
 | `cost_management` | 17 | ledger, posiciones, costo comercial, tránsito, auditoría, integración y cierre diario |
 | `document_management` | 4 | documento, binario y OCR versionado |
-| `accounts_payable` | 10 | propuesta condicionada: documento de compra, match operativo e intercambio externo |
+| `accounts_payable` | 11 | documento de compra, match operativo, solicitud de NC e intercambio externo |
 
 El inventario y la responsabilidad de cada tabla se encuentran en
 `10-especificacion-funcional-modelo-integral.md`.
@@ -69,7 +69,7 @@ El inventario y la responsabilidad de cada tabla se encuentran en
 3. `doc_extraction_run`
 4. `doc_extracted_field`
 
-#### `accounts_payable` — 10 tablas
+#### `accounts_payable` — 11 tablas
 
 1. `ap_invoice`
 2. `ap_invoice_line`
@@ -79,8 +79,9 @@ El inventario y la responsabilidad de cada tabla se encuentran en
 6. `ap_match_allocation`
 7. `ap_match_exception`
 8. `ap_match_approval`
-9. `ap_external_exchange`
-10. `ap_external_exchange_line`
+9. `ap_credit_note_request`
+10. `ap_external_exchange`
+11. `ap_external_exchange_line`
 
 La responsabilidad funcional, relaciones y reglas de cada entidad están
 detalladas en `10-especificacion-funcional-modelo-integral.md`.
@@ -94,15 +95,16 @@ detalladas en `10-especificacion-funcional-modelo-integral.md`.
 
 Todas las versiones son provisionales. CORE debe confirmar o renombrar los
 archivos antes de incorporarlos a su repositorio Flyway oficial. Los cuatro
-archivos forman el inventario completo, pero se aprueban por etapas. El cuarto
-script no debe aplicarse hasta aprobar `CNX-COST-ADR-002` y confirmar que no
-duplica funciones de SAP.
+archivos forman el inventario completo y se aprueban por etapas. El cuarto script
+implementa capacidades operativas propias de CONNEXA; la interfaz específica con
+SAP u otro sistema contable se habilita posteriormente por cliente.
 
 ## Frontera con SAP
 
 CONNEXA conserva las funciones operativas necesarias para stock, Kardex, costos,
-documentos fuente e interfaces. SAP es el sistema de registro contable, fiscal y
-de cuentas a pagar, salvo decisión explícita y documentada del programa SAP.
+documentos fuente, conciliación, solicitudes de NC e interfaces. El sistema
+contable del cliente es el sistema de registro contable, fiscal, de cuenta
+corriente y cuentas a pagar. Para DIARCO, ese sistema es SAP.
 
 Por lo tanto, quedan fuera de CONNEXA:
 
@@ -198,8 +200,8 @@ por Contabilidad, Impuestos y Arquitectura.
 5. Confirmar ejecución transaccional de cada archivo.
 6. Revisar constraints, índices y referencias entre migraciones.
 7. Aprobar el orden y decidir si se aplica cada etapa.
-8. Aprobar RACI, blueprint y contratos SAP antes de autorizar `accounts_payable`.
-9. Verificar que ningún estado o tabla replique una función oficial de SAP.
+8. Aprobar el bloque operativo `accounts_payable` independientemente del adaptador contable.
+9. Verificar que ningún estado o tabla replique una función oficial del sistema contable.
 
 ## Validaciones posteriores
 
@@ -231,10 +233,9 @@ WHERE n.nspname IN (
 ORDER BY conrelid::regclass::text, conname;
 ```
 
-Resultado esperado para las etapas no condicionadas: `cost_management=17` y
-`document_management=4`. `accounts_payable=10` sólo si el fit-gap SAP confirma y
-Arquitectura autoriza el cuarto script completo; si se reduce o reemplaza, CORE
-debe actualizar solicitud, migración y resultado esperado antes de aplicarlo.
+Resultado esperado: `cost_management=17`, `document_management=4` y
+`accounts_payable=11`. Los adaptadores contables se validan por cliente sin
+modificar la responsabilidad del bloque operativo.
 CORE debe adjuntar versiones, checksums y resultado Flyway.
 
 ## Pruebas por etapa

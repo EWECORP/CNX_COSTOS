@@ -59,9 +59,10 @@ SAP.
 
 ### Accounts Payable / Matching
 
-Este bloque es una propuesta condicionada al fit-gap con SAP. Su alcance máximo
-es preparar la valorización y una interfaz completa; no constituye el subledger
-oficial de proveedores.
+Este bloque es una capacidad operativa propia de CONNEXA, independiente del
+sistema contable del cliente. Cierra el flujo recepción–documento–conciliación–
+valorización y prepara interfaces completas; no constituye el subledger oficial
+de proveedores.
 
 | Tabla | Responsabilidad |
 |---|---|
@@ -73,7 +74,8 @@ oficial de proveedores.
 | `ap_match_allocation` | Relación muchos-a-muchos factura–OC–recepción |
 | `ap_match_exception` | Diferencias y resolución estructurada |
 | `ap_match_approval` | Segregación y aprobación del match |
-| `ap_external_exchange` | Paquete, payload, respuesta y reintentos con SGM/SAP, sujeto a arquitectura corporativa |
+| `ap_credit_note_request` | Solicitud de NC originada por diferencias de conciliación y seguimiento externo |
+| `ap_external_exchange` | Paquete, payload, respuesta y reintentos con SGM o sistema contable |
 | `ap_external_exchange_line` | Resultado externo detallado por asignación/línea |
 
 `ap_invoice_tax` y `ap_external_exchange_line` se formalizan como tablas de apoyo
@@ -89,6 +91,7 @@ doc_document → doc_binary → doc_extraction_run → doc_extracted_field
                          └→ ap_match → ap_match_allocation
                                         ├→ ap_match_exception
                                         ├→ ap_match_approval
+                                        ├→ ap_credit_note_request
                                         └→ ap_external_exchange/line
 
 Recepción / venta / transferencia / match aprobado
@@ -115,6 +118,10 @@ Recepción / venta / transferencia / match aprobado
 - FK físicas sólo unen tablas dentro del paquete propio.
 - Inbox, claves naturales y hashes soportan idempotencia/deduplicación.
 - Cada migración es aditiva y no contiene backfill.
+- El Costo Neto Comercial Unificado se publica por compañía/cadena, artículo,
+  UOM, moneda y vigencia, y es la base común de Pricing y margen objetivo.
+- La rentabilidad y performance por sucursal utilizan el costo local congelado en
+  el evento de salida, no el CPP vigente al momento de consultar.
 
 ## Flujos cubiertos
 
@@ -127,7 +134,8 @@ Recepción / venta / transferencia / match aprobado
 7. Stock negativo, ajustes, devoluciones y replay.
 8. Cierre diario valorizado y reconstruible.
 9. OCR, corrección humana, intercambio con SGM y auditoría.
-10. Publicación versionada del costo comercial.
+10. Solicitud de NC ante diferencias de factura contra OC/recepción.
+11. Publicación versionada del costo comercial.
 
 ## Fuera de esta solicitud física
 
@@ -142,16 +150,18 @@ Estos bloques están definidos funcionalmente, pero todavía no tienen modelo f�
 aprobado por Contabilidad, Impuestos y Arquitectura. Incluir tablas inventadas en
 esta migración aumentaría el riesgo y violaría el proceso de gobierno acordado.
 
-Las 10 tablas de `accounts_payable` tampoco quedan autorizadas automáticamente:
-deben reducirse o confirmarse después de definir el RACI, blueprint y contratos
-con SAP conforme a `CNX-COST-ADR-002`.
+Las 11 tablas de `accounts_payable` forman el bloque operativo necesario para
+cerrar la recepción, conciliación y valorización. La activación de cada adaptador
+contable sí requiere el contrato particular del cliente conforme a
+`CNX-COST-ADR-002`.
 
 ## Criterios de aceptación del esquema
 
-- Se revisan 31 tablas: 17 de Cost Management, 4 documentales y 10 propuestas de
-  conciliación. La aprobación puede comprender un subconjunto.
+- Se revisan 32 tablas: 17 de Cost Management, 4 documentales y 11 de
+  conciliación operativa. La aprobación puede comprender un subconjunto.
 - Las migraciones autorizadas se aplican en orden dentro de Flyway; la cuarta
-  requiere aprobación previa del fit-gap SAP.
+  puede aprobarse como capacidad propia de CONNEXA y sus adaptadores se habilitan
+  por cliente.
 - No se cargan datos funcionales.
 - No se modifican objetos existentes.
 - Constraints impiden duplicados, estados inválidos y relaciones huérfanas internas.
@@ -170,5 +180,5 @@ con SAP conforme a `CNX-COST-ADR-002`.
 - política de almacenamiento para binarios y resultados OCR;
 - datos sensibles, cifrado, masking y retención;
 - estrategia de expansión/contracción y promoción a Testing (`PGT_HOST`).
-- RACI, blueprint, objetos SAP, ownership por campo y contratos de interfaz;
-- confirmación, reducción o reemplazo del bloque `accounts_payable`.
+- RACI, objetos del sistema contable, ownership por campo y contratos de interfaz;
+- estrategia de adaptadores contables por cliente, comenzando por SAP para DIARCO.

@@ -91,7 +91,8 @@ el costo ni modifica recepciones.
 ### Accounts Payable / Invoice Matching
 
 Responsable del documento canónico, validaciones, deduplicación, conciliación y
-aprobación. Produce asignaciones explícitas contra OC y recepción.
+aprobación. Produce asignaciones explícitas contra OC y recepción y, cuando la
+factura presenta una diferencia reclamable, emite una solicitud de nota de crédito.
 
 ### Procurement
 
@@ -105,15 +106,17 @@ provisional, ajustes a costo definitivo y NC/ND en el Kardex.
 
 ### Tax y Accounting
 
-SAP recibe mediante interfaces los componentes fiscales y contables aprobados. No
+El sistema contable del cliente recibe mediante interfaces los componentes fiscales
+y contables aprobados. No
 debe reconstruirlos consultando directamente el OCR. CONNEXA conserva esos datos
 como evidencia de costo e interfaz, no como subledger oficial.
 
-### SAP
+### Sistema contable (SAP en DIARCO)
 
-Es el sistema de registro de cuentas a pagar, contabilización, impuestos, pagos y
-reportes legales, salvo excepción aprobada en el blueprint. Una aprobación local
-habilita el ajuste de costo y la interfaz; no equivale a contabilización SAP.
+Es el sistema de registro de cuentas a pagar, cuenta corriente de proveedores,
+contabilización, impuestos, pagos y reportes legales. Una aprobación local habilita
+el ajuste de costo y la interfaz; no equivale a contabilización externa. En DIARCO
+este sistema es SAP; en otros clientes puede ser otro sistema contable.
 
 ## Modelo conceptual propuesto
 
@@ -173,7 +176,13 @@ una factura anterior.
 `ap_match_exception` registra diferencias estructuradas y su resolución.
 `ap_match_approval` conserva usuario, rol, fecha, decisión y motivo.
 
-### Integración transitoria con SGM y objetivo SAP
+`ap_credit_note_request` registra la solicitud emitida por CONNEXA cuando la
+factura conciliada difiere de la OC o de la recepción y corresponde reclamar un
+descuento. Conserva importe, moneda, motivo, evidencia, conciliación y excepción
+de origen, estados, envío y referencia externa. No es una NC emitida ni modifica
+por sí misma la cuenta corriente del proveedor.
+
+### Integración transitoria con SGM y sistema contable objetivo
 
 `ap_external_exchange` debe conservar:
 
@@ -189,8 +198,8 @@ una factura anterior.
 Mientras SGM sea quien concilia, CONNEXA debe persistir el paquete enviado y
 recibir el resultado detallado. Un estado genérico `SENT` no alcanza para valorizar
 ni auditar. En el modelo objetivo, SGM queda detrás de un conector y el contrato
-canónico no depende de su estructura particular. La salida hacia SAP debe incluir
-acuse técnico, resultado funcional, referencia SAP y reconciliación; CONNEXA no
+canónico no depende de su estructura particular. La salida hacia el sistema
+contable debe incluir acuse técnico, resultado funcional, referencia externa y reconciliación; CONNEXA no
 reproduce el posting contable internamente.
 
 ## Conciliación de tres vías
@@ -250,9 +259,9 @@ PENDING -> AUTO_MATCHED -> APPROVED -> READY_FOR_EXPORT
         -> REJECTED
 ```
 
-La aprobación operativa y la aceptación de SAP deben ser estados distintos.
+La aprobación operativa y la aceptación del sistema contable deben ser estados distintos.
 Aprobar confirma la conciliación y autoriza el costo/interfaz; sólo la respuesta de
-SAP confirma el registro oficial.
+el sistema contable confirma el registro oficial.
 
 ## Reglas de tolerancia
 
@@ -312,6 +321,13 @@ Una NC/ND conciliada genera un ajuste de valor referenciado a factura, recepció
 artículos. Si parte de la mercadería ya fue vendida, la política debe distribuir el
 efecto entre inventario remanente y costo de mercadería vendida/resultados.
 
+Cuando la factura recibida difiere de la OC o de la recepción fuera de tolerancia,
+CONNEXA genera una `CREDIT_NOTE_REQUEST`. La solicitud se envía al circuito
+correspondiente y luego al sistema contable para que el cliente gestione el
+descuento en la cuenta corriente del proveedor. La posterior NC real se ingresa
+como documento independiente y se relaciona con la solicitud, factura y match de
+origen.
+
 ## Flujo objetivo
 
 ```text
@@ -329,9 +345,9 @@ Email / portal / EDI / carga en recepción
                   │
       ┌───────────┴────────────┐
       ▼                        ▼
-   Kardex                Interfaz SAP
+   Kardex          Solicitud NC / interfaz contable
       │                        │
- costo definitivo      acuse y referencia SAP
+ costo definitivo      acuse y referencia externa
 ```
 
 ## Controles mínimos
@@ -344,9 +360,9 @@ Email / portal / EDI / carga en recepción
 6. Ninguna línea se valoriza sin asignación a artículo y recepción, salvo cargos
    generales con método de distribución aprobado.
 7. Reversas y rectificaciones; nunca borrado del documento contabilizado.
-8. Separación entre corrección, conciliación, aprobación e interfaz SAP.
-9. Trazabilidad completa de envíos y respuestas de SGM/SAP.
-10. Reconciliación de cantidad e importe entre documentos CONNEXA y registros SAP.
+8. Separación entre corrección, conciliación, solicitud de NC, aprobación e interfaz contable.
+9. Trazabilidad completa de envíos y respuestas de SGM/sistema contable.
+10. Reconciliación de cantidad e importe entre documentos CONNEXA y registros externos.
 
 ## Decisiones aplicables
 
@@ -370,4 +386,4 @@ Email / portal / EDI / carga en recepción
 - política para facturas sin OC, servicios sin recepción y NC sin referencia;
 - retención, acceso, cifrado y clasificación de originales;
 - contrato detallado de intercambio y respuesta por línea mientras continúe SGM.
-- RACI, blueprint, objetos de negocio y contratos de interfaz SAP.
+- RACI, objetos de negocio y contratos del adaptador contable de cada cliente.

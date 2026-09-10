@@ -72,8 +72,18 @@ contable, impositiva ni técnica de cada parametrización.
     asincrónicamente con SLA, reintentos e idempotencia.
 21. CONNEXA no implementa contabilidad, subledger de proveedores, liquidación
     fiscal, pagos ni reporting legal propios. Conserva la evidencia y el detalle
-    necesarios para costo e interfaces completas con SAP, sistema de registro
-    oficial para esas funciones salvo decisión explícita del blueprint.
+    necesarios para costo e interfaces completas con el sistema contable de cada
+    cliente. Para DIARCO ese sistema es SAP.
+22. El bloque operativo `accounts_payable` es parte del producto CONNEXA y no queda
+    condicionado al ERP del cliente. Cuando una factura difiere de la OC o de la
+    recepción fuera de tolerancia, CONNEXA emite y sigue una solicitud de nota de
+    crédito. La NC real y el descuento en la cuenta corriente del proveedor son
+    confirmados por el sistema contable.
+23. El Costo Neto Comercial Unificado se publica a nivel compañía/cadena y es la
+    base común para fijación de precios, margen objetivo y decisiones comerciales.
+    La rentabilidad y performance de una sucursal utilizan el costo local congelado
+    en cada salida; el CPP actual sólo describe la posición vigente y no reemplaza
+    el costo histórico de la venta.
 
 ## Gobierno de cambios de base de datos
 

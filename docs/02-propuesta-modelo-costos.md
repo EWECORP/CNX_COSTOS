@@ -21,15 +21,26 @@ El modelo publica tres métricas distintas:
 
 | Métrica | Granularidad | Uso |
 |---|---|---|
-| `local_inventory_wac` | compañía, artículo, sucursal, UOM, moneda | valuación y costo de salida local |
+| `local_inventory_wac` | compañía, artículo, sucursal, UOM, moneda | valuación, costo de venta, rentabilidad y performance de la sucursal |
 | `company_inventory_wac` | compañía, artículo, UOM, moneda | valuación consolidada del inventario existente |
-| `company_commercial_net_cost` | compañía, artículo, moneda, vigencia | precios, margen y decisiones comerciales |
+| `company_commercial_net_cost` | compañía, artículo, moneda, vigencia | costo neto comercial unificado para precios, margen objetivo y decisiones comerciales |
 
-Esta arquitectura y las decisiones funcionales 1 a 21 fueron aprobadas
+Esta arquitectura y las decisiones funcionales 1 a 23 fueron aprobadas
 conceptualmente el 1 de septiembre de 2026. No deben exponerse bajo un único
 nombre ambiguo. El costo comercial puede incluir
 condiciones estimadas o devengadas que no corresponden capitalizar en inventario;
 por eso no siempre coincide con el promedio consolidado.
+
+El **Costo Neto Comercial Unificado** es único a nivel compañía/cadena por artículo,
+UOM, moneda y vigencia. Pricing, promociones y fijación de márgenes deben consumir
+la versión `PUBLISHED` de este costo para mantener una base homogénea entre
+sucursales. Las excepciones comerciales locales, si se habilitan, se aplican como
+reglas de precio y no crean otra autoridad de costo.
+
+La rentabilidad y performance de cada sucursal se calculan con el costo local
+efectivamente aplicado a sus salidas. Para análisis históricos se utiliza
+`cst_cost_event_line.unit_cost` y el evento de venta correspondiente; nunca el CPP
+actual, porque puede haber cambiado después de la operación.
 
 ## Componentes del modelo
 
@@ -110,6 +121,10 @@ su método, componentes, evidencia y hash de cálculo. Una versión puede estar 
 
 Pricing y márgenes deben consumir solamente versiones `PUBLISHED`, mientras que
 simulaciones pueden usar `DRAFT` de forma explícita.
+
+La publicación es corporativa: no se generan versiones comerciales distintas por
+sucursal. Cada mensaje de outbox debe identificar la versión, vigencia, UOM,
+moneda, método y hash de cálculo del Costo Neto Comercial Unificado.
 
 ### 5. Reconciliación y publicación
 
@@ -230,7 +245,7 @@ pero no debe ocultar la pérdida operativa.
 La recuperabilidad se resuelve mediante una matriz versionada por compañía,
 impuesto, jurisdicción, artículo/categoría, proveedor, operación y vigencia:
 
-- IVA y percepciones recuperables: dato fuente de la interfaz SAP, fuera del costo;
+- IVA y percepciones recuperables: dato fuente de la interfaz contable, fuera del costo;
 - impuestos no recuperables directamente atribuibles: integran costo;
 - recuperabilidad parcial: división explícita entre crédito y costo;
 - retenciones: crédito/cancelación tributaria, no costo;
@@ -313,8 +328,8 @@ lógica fija dentro del consumidor.
 BRIDGE debe publicar cabecera, línea, artículo, sucursal, caja, precio, cantidad,
 promoción, impuestos, moneda y clave fiscal/idempotente. La línea comercial genera
 el movimiento de salida; Cost Management asigna el costo de mercadería vendida.
-La interfaz SAP consume el documento canónico; no reconstruye IVA ni ventas desde
-movimientos agregados de stock. SAP conserva los registros fiscal y contable
+La interfaz del sistema contable consume el documento canónico; no reconstruye IVA ni ventas desde
+movimientos agregados de stock. El sistema contable conserva los registros fiscal y contable
 oficiales.
 
 ## Consistencia al cierre
@@ -330,7 +345,7 @@ El cierre físico de una recepción confirma como una única unidad lógica:
 
 Si no puede persistirse movimiento y valorización, la recepción queda en una
 excepción controlada y no en estado final silencioso. Factura, OCR, conciliación,
-interfaz SAP y publicación hacia consumidores pueden ejecutarse asincrónicamente
+interfaz contable y publicación hacia consumidores pueden ejecutarse asincrónicamente
 con SLA, reintentos, monitoreo e idempotencia.
 
 ## Aprobación, publicación y auditoría
@@ -342,7 +357,7 @@ motivo, vigencia, tolerancia y evidencia.
 
 El ledger es append-only. Conserva documento y hash, evento origen, fecha efectiva
 y de registración, valores antes/después, regla y versión, actor, aprobación,
-reversa y correlación con la referencia SAP. La retención y acceso se parametrizan
+reversa y correlación con la referencia externa. La retención y acceso se parametrizan
 por compañía y clase documental.
 
 ## Compatibilidad con la arquitectura de CONNEXA

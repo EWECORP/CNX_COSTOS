@@ -43,7 +43,7 @@ No incluye en este primer script:
 - carga de saldos o backfill histórico;
 - creación del ledger completo `cst_cost_event*`;
 - integración automática con SGM, BRIDGE o PDD;
-- construcción de interfaces SAP contables/fiscales o interfaces de Pricing;
+- construcción de interfaces contables/fiscales o interfaces de Pricing;
 - permisos y roles definitivos, que debe definir CORE con Seguridad.
 
 ## Definiciones
@@ -211,7 +211,7 @@ sincronización transaccional.
 - los detalles fallidos no se publican como oficiales;
 - las referencias a eventos son lógicas en el primer script y se convertirán en FK
   cuando el ledger físico sea aprobado;
-- ninguna interfaz SAP contable/fiscal utiliza `PROVISIONAL` por defecto;
+- ninguna interfaz contable/fiscal utiliza `PROVISIONAL` por defecto;
 - retención y acceso siguen la política aprobada para el ledger.
 
 ## Criterios de aceptación
